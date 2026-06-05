@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
@@ -111,7 +111,7 @@
     </span>
   </div>
   <div class="canvas-wrap">
-    <canvas id="game" width="500" height="500"></canvas>
+    <canvas id="gameCanvas" width="500" height="500"></canvas>
     <div class="overlay show" id="overlay">
       <h2>🐍 贪吃蛇+</h2>
       <p>方向键 / WASD 控制<br>空格暂停 · R 重开 · 穿墙循环</p>
@@ -141,6 +141,12 @@
 <script>
 (()=>{
 const G=25,S=500,C=S/G;
+const canvas=document.getElementById('gameCanvas');
+const ctx=canvas.getContext('2d');
+const scoreEl=document.getElementById('score'),bestEl=document.getElementById('best'),pauseBtn=document.getElementById('pauseBtn');
+const comboEl=document.getElementById('comboDisplay'),lvlEl=document.getElementById('lvlDisplay');
+const shieldText=document.getElementById('shieldText'),shieldIcon=document.getElementById('shieldIcon');
+const overlay=document.getElementById('overlay'),startBtn=document.getElementById('startBtn'),resetBtn=document.getElementById('resetBtn');
 let snake,food,obs,dir,ndir,sc,best,ate,combo,sp,lvl,go,pa,wn,shd,shi,parts,pops,aid,raf,cdAct,cdVal,run;
 const MO=24,SI=10,OI=5,BS=150,MS=45;
 function pop(x,y,t,c){pops.push({x:x*C+C/2,y:y*C+C/2,t,c,l:1,vy:-1.5})}
