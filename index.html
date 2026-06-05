@@ -91,6 +91,67 @@
     .overlay h2 { font-size: 20px; }
     .overlay p { font-size: 13px; }
   }
+  /* Leaderboard */
+  .name-input-wrap { display: flex; align-items: center; gap: 8px; margin: 4px 0; width: 100%; max-width: 320px; justify-content: center; }
+  .name-input-wrap input { background: #2a2a44; border: 1px solid #4a4a6a; border-radius: 6px; padding: 6px 10px; color: #e0e0f0; font-size: 13px; width: 140px; outline: none; }
+  .name-input-wrap input:focus { border-color: #6a6a9a; }
+  .name-input-wrap input::placeholder { color: #606080; }
+  .submit-btn { min-width: 84px; }
+  .submit-btn:disabled { opacity: .5; cursor: default; }
+  .lb-status { color: #8888b0; font-size: 12px; min-height: 18px; margin: 2px 0; }
+  .lb-section { width: 100%; max-width: 340px; margin-top: 2px; }
+  .lb-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .lb-table th { color: #606090; font-weight: 600; padding: 3px 6px; text-align: left; border-bottom: 1px solid #3a3a5a; }
+  .lb-table th:first-child { width: 26px; text-align: center; }
+  .lb-table th:nth-child(3) { text-align: right; }
+  .lb-table th:last-child { text-align: right; }
+  .lb-table td { padding: 3px 6px; color: #b0b0d0; border-bottom: 1px solid #2a2a44; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100px; }
+  .lb-table td:first-child { text-align: center; color: #707098; width: 26px; }
+  .lb-table td:nth-child(3) { text-align: right; font-weight: 600; color: #f0e68c; }
+  .lb-table td:last-child { text-align: right; color: #aed581; }
+  .lb-table .current-player td { background: rgba(79,195,247,.1); color: #4fc3f7; }
+  .lb-table-wrap { max-height: 200px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: #4a4a6a transparent; }
+  .lb-table-wrap::-webkit-scrollbar { width: 4px; }
+  .lb-table-wrap::-webkit-scrollbar-track { background: transparent; }
+  .lb-table-wrap::-webkit-scrollbar-thumb { background: #4a4a6a; border-radius: 2px; }
+  .lb-title { color: #606090; font-size: 11px; font-weight: 600; letter-spacing: 1px; margin: 6px 0 2px; }
+  .lb-your-rank { color: #4fc3f7; font-size: 11px; font-weight: 600; }
+  @media (max-width: 560px) {
+    .name-input-wrap input { width: 120px; }
+    .lb-table td { max-width: 70px; }
+    .lb-section { max-width: 300px; }
+  }
+  /* Leaderboard */
+  .name-input-wrap { display: flex; align-items: center; gap: 8px; margin: 4px 0; width: 100%; max-width: 320px; justify-content: center; }
+  .name-input-wrap input { background: #2a2a44; border: 1px solid #4a4a6a; border-radius: 6px; padding: 6px 10px; color: #e0e0f0; font-size: 13px; width: 140px; outline: none; }
+  .name-input-wrap input:focus { border-color: #6a6a9a; }
+  .name-input-wrap input::placeholder { color: #606080; }
+  .submit-btn { min-width: 84px; }
+  .submit-btn:disabled { opacity: .5; cursor: default; }
+  .lb-status { color: #8888b0; font-size: 12px; min-height: 18px; margin: 2px 0; }
+  .lb-section { width: 100%; max-width: 340px; margin-top: 2px; }
+  .lb-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .lb-table th { color: #606090; font-weight: 600; padding: 3px 6px; text-align: left; border-bottom: 1px solid #3a3a5a; }
+  .lb-table th:first-child { width: 26px; text-align: center; }
+  .lb-table th:nth-child(3) { text-align: right; }
+  .lb-table th:last-child { text-align: right; }
+  .lb-table td { padding: 3px 6px; color: #b0b0d0; border-bottom: 1px solid #2a2a44; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100px; }
+  .lb-table td:first-child { text-align: center; color: #707098; width: 26px; }
+  .lb-table td:nth-child(3) { text-align: right; font-weight: 600; color: #f0e68c; }
+  .lb-table td:last-child { text-align: right; color: #aed581; }
+  .lb-table .current-player td { background: rgba(79,195,247,.1); color: #4fc3f7; }
+  .lb-table-wrap { max-height: 200px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: #4a4a6a transparent; }
+  .lb-table-wrap::-webkit-scrollbar { width: 4px; }
+  .lb-table-wrap::-webkit-scrollbar-track { background: transparent; }
+  .lb-table-wrap::-webkit-scrollbar-thumb { background: #4a4a6a; border-radius: 2px; }
+  .lb-title { color: #606090; font-size: 11px; font-weight: 600; letter-spacing: 1px; margin: 6px 0 2px; }
+  .lb-your-rank { color: #4fc3f7; font-size: 11px; font-weight: 600; }
+  @media (max-width: 560px) {
+    .name-input-wrap input { width: 120px; }
+    .lb-table td { max-width: 70px; }
+    .lb-section { max-width: 300px; }
+  }
+
 </style>
 </head>
 <body>
@@ -122,7 +183,37 @@
         <span>💠 护盾</span>
         <span>🧱 障碍</span>
       </div>
-      <button class="btn btn-primary" id="startBtn">开始游戏</button>
+      <button class="btn btn-primary" id="startBtn">开始游戏      <div class="lb-section" id="lbSection" style="display:none">
+        <div class="name-input-wrap">
+          <input type="text" id="nameInput" placeholder="输入名字" maxlength="10" autocomplete="off" />
+          <button class="btn btn-primary submit-btn" id="submitBtn">上传成绩</button>
+        </div>
+        <div class="lb-status" id="lbStatus">🎮 游戏结束后上传成绩</div>
+        <div class="lb-title">🏆 排行榜</div>
+        <div class="lb-table-wrap">
+          <table class="lb-table">
+            <thead><tr><th>#</th><th>玩家</th><th>得分</th><th>等级</th></tr></thead>
+            <tbody id="lbBody"></tbody>
+          </table>
+        </div>
+        <div id="lbYourRank" class="lb-your-rank"></div>
+      </div>
+      </button>
+      <div class="lb-section" id="lbSection" style="display:none">
+        <div class="name-input-wrap">
+          <input type="text" id="nameInput" placeholder="输入名字" maxlength="10" autocomplete="off" />
+          <button class="btn btn-primary submit-btn" id="submitBtn">上传成绩</button>
+        </div>
+        <div class="lb-status" id="lbStatus">游戏结束后上传成绩</div>
+        <div class="lb-title">排行榜</div>
+        <div class="lb-table-wrap">
+          <table class="lb-table">
+            <thead><tr><th>#</th><th>玩家</th><th>得分</th><th>等级</th></tr></thead>
+            <tbody id="lbBody"></tbody>
+          </table>
+        </div>
+        <div id="lbYourRank" class="lb-your-rank"></div>
+      </div>
     </div>
   </div>
   <div class="controls">
@@ -184,6 +275,36 @@ document.querySelectorAll('[data-dir]').forEach(btn=>{btn.addEventListener('touc
 let sx2,sy2;canvas.addEventListener('touchstart',e=>{const t=e.touches[0];sx2=t.clientX;sy2=t.clientY},{passive:true});canvas.addEventListener('touchmove',e=>e.preventDefault(),{passive:false});canvas.addEventListener('touchend',e=>{if(sx2==null)return;const dx=e.changedTouches[0].clientX-sx2,dy=e.changedTouches[0].clientY-sy2;if(Math.abs(dx)<10&&Math.abs(dy)<10)return;if(Math.abs(dx)>Math.abs(dy))sD(dx>0?1:-1,0);else sD(0,dy>0?1:-1);sx2=null;sy2=null},{passive:true})
 startBtn.addEventListener('click',stG);pauseBtn.addEventListener('click',tP);resetBtn.addEventListener('click',rG)
 function an(){upPa();upPops();if(!cdAct)draw();raf=requestAnimationFrame(an)}
+
+// === Leaderboard / Supabase ===
+const SUPABASE_URL = 'YOUR_SUPABASE_URL';
+const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY';
+const SUPABASE_TABLE = 'snake_scores';
+const lbSection=document.getElementById('lbSection');const nameInput=document.getElementById('nameInput');
+const submitBtn=document.getElementById('submitBtn');const lbStatus=document.getElementById('lbStatus');
+const lbBody=document.getElementById('lbBody');const lbYourRank=document.getElementById('lbYourRank');
+let plName=localStorage.getItem('snake_player_name')||'';let submitted=false;
+let lbCache=null;
+function escHtml(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML}
+function showLB(){lbSection.style.display='';startBtn.style.display='none';}
+function hideLB(){lbSection.style.display='none';startBtn.style.display='';}
+function loadLB(){const q='player_name,score,lvl';fetch(SUPABASE_URL+'/rest/v1/'+SUPABASE_TABLE+'?select='+q+'&order=score.desc.nullslast,created_at.asc&limit=50',{headers:{apikey:SUPABASE_ANON_KEY}}).then(r=>{if(!r.ok)throw Error();return r.json()}).then(d=>{lbCache=d;renderLB(d)}).catch(()=>{lbStatus.innerHTML='<span style="color:#9090b8">\u6682\u65e0\u6392\u884c\u699c</span>'})}
+function renderLB(data){lbBody.innerHTML='';if(!data||data.length===0){lbStatus.innerHTML='<span style="color:#9090b8">\u6682\u65e0\u6210\u7ee9</span>';lbYourRank.textContent='';return}
+lbStatus.textContent='';let rank=-1;data.forEach((s,i)=>{const tr=document.createElement('tr');if(s.player_name===plName){tr.classList.add('current-player');rank=i+1}tr.innerHTML='<td>'+(i+1)+'</td><td title="'+escHtml(s.player_name)+'">'+escHtml(s.player_name)+'</td><td>'+s.score+'</td><td>Lv.'+s.lvl+'</td>';lbBody.appendChild(tr)})
+if(rank>0){lbYourRank.textContent='\u2b50 \u4f60\u7684\u6392\u540d: \u7b2c '+rank+' \u540d'}else if(plName){lbYourRank.textContent='\u672a\u4e0a\u699c\uff0c\u4e0a\u4f20\u6210\u7ee9\u8bd5\u8bd5'}else{lbYourRank.textContent=''}}
+function submitScore(){const n=nameInput.value.trim();if(!n){lbStatus.textContent='\u8bf7\u8f93\u5165\u540d\u5b57';nameInput.focus();return}
+if(submitted){lbStatus.textContent='\u5df2\u4e0a\u4f20\u672c\u5c40\u6210\u7ee9';return}
+if(sc<=0){lbStatus.textContent='0 \u5206\u65e0\u9700\u4e0a\u4f20';return}
+const ls=parseInt(localStorage.getItem('snake_last_submit'))||0;const cd=15000;
+if(Date.now()-ls<cd){lbStatus.textContent='\u8bf7 '+(Math.ceil((cd-(Date.now()-ls))/1000))+' \u79d2\u540e\u518d\u8bd5';return}
+submitBtn.disabled=true;submitBtn.textContent='\u4e0a\u4f20\u4e2d...';plName=n;localStorage.setItem('snake_player_name',n);
+fetch(SUPABASE_URL+'/rest/v1/'+SUPABASE_TABLE,{method:'POST',headers:{'Content-Type':'application/json',apikey:SUPABASE_ANON_KEY,'Prefer':'return=minimal'},body:JSON.stringify({player_name:n,score:sc,combo:combo,lvl:lvl,snake_length:snake.length})}).then(r=>{if(!r.ok)throw Error();submitted=true;localStorage.setItem('snake_last_submit',String(Date.now()));submitBtn.textContent='\u5df2\u4e0a\u4f20 \u2713';submitBtn.disabled=true;lbStatus.textContent='\u2705 \u6210\u7ee9\u5df2\u8bb0\u5f55\uff01';loadLB()}).catch(()=>{submitBtn.disabled=false;submitBtn.textContent='\u4e0a\u4f20\u5931\u8d25\uff0c\u91cd\u8bd5';lbStatus.textContent='\u7f51\u7edc\u9519\u8bef\uff0c\u8bf7\u7a0d\u540e\u91cd\u8bd5'})}
+function eG(){go=true;run=false;submitted=false;submitBtn.disabled=false;submitBtn.textContent='\u4e0a\u4f20\u6210\u7ee9';sO('\ud83d\udc80 \u6e38\u620f\u7ed3\u675f','\u5f97\u5206\uff1a'+sc+' | \u6700\u9ad8\u8fde\u51fb\uff1a'+combo+'<br>\u901f\u5ea6\u7b49\u7ea7\uff1a'+lvl+' <br>\u86c7\u8eab\u957f\u5ea6\uff1a'+snake.length);showLB();if(plName)nameInput.value=plName;if(lbCache)renderLB(lbCache);loadLB()}
+submitBtn.addEventListener('click',submitScore);
+nameInput.addEventListener('keydown',function(e){if(e.key==='Enter')submitScore()});
+if(plName)nameInput.value=plName;
+hideLB();loadLB();
+
 init();an()})();
 </script>
 </body>
