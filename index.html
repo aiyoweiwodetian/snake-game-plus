@@ -265,25 +265,43 @@
     const SUPABASE_ANON_KEY = 'sb_publishable_3q_i_8APJiz_qCRXfdHDVg_kj53nNPh';
     const SUPABASE_TABLE = 'snake_scores';
 
-    const GRID = 28;
-    const CELL = 18;
-    const SIZE = GRID * CELL;
-    const TYPES = {
-      FOOD: 'food', STAR: 'star', POISON: 'poison', SHIELD: 'shield', BOOST: 'boost'
-    };
+    // 保留原始版本的核心成长曲线：25x25 棋盘、按吃到的食物数量升级、组合加分、按住前进方向加速。
+    const GRID = 25;
+    const SIZE = 500;
+    const CELL = SIZE / GRID;
+    const SHIELD_INTERVAL = 10;
+    const OBSTACLE_INTERVAL = 5;
+    const BASE_SPEED = 150;
+    const MIN_SPEED = 45;
+    const OBSTACLE_ROTATE_BASE = 400;
+    const OBSTACLE_SHAPES = [
+      [[0, 0]],
+      [[0, 0], [1, 0]],
+      [[0, 0], [0, 1]],
+      [[0, 0], [1, 0], [2, 0]],
+      [[0, 0], [0, 1], [0, 2]],
+      [[0, 0], [1, 0], [0, 1]],
+      [[0, 0], [-1, 0], [1, 0], [0, 1]]
+    ];
+
+    canvas.width = SIZE;
+    canvas.height = SIZE;
 
     let snake;
+    let food;
+    let shieldItem;
+    let obstacles;
+    let obstacleShapes;
     let dir;
     let nextDir;
-    let food;
-    let special;
-    let obstacles;
     let score;
-    let level;
+    let ate;
     let combo;
     let maxCombo;
+    let level;
+    let speed;
     let shield;
-    let boostUntil;
+    let obstacleTimer;
     let best = Number(localStorage.getItem('snake_best') || 0);
     let globalBest = 0;
     let state = 'idle'; // idle | countdown | running | paused | over | won | error
@@ -296,120 +314,151 @@
     let lbCache = [];
     let touchStartX = null;
     let touchStartY = null;
+    const holdKeys = { up: false, down: false, left: false, right: false };
 
-    canvas.width = SIZE;
-    canvas.height = SIZE;
     if (playerName) nameInput.value = playerName;
 
     function randInt(n) { return Math.floor(Math.random() * n); }
-    function sameCell(a, b) { return a && b && a.x === b.x && a.y === b.y; }
     function keyOf(c) { return c.x + ',' + c.y; }
-    function clamp(n, min, max) { return Math.max(min, Math.min(max, n)); }
+    function sameCell(a, b) { return !!a && !!b && a.x === b.x && a.y === b.y; }
     function escapeHtml(s) {
       const d = document.createElement('div');
       d.textContent = String(s == null ? '' : s);
       return d.innerHTML;
     }
 
+    function isAccelerating() {
+      return state === 'running' && (
+        (dir.x === 1 && holdKeys.right) ||
+        (dir.x === -1 && holdKeys.left) ||
+        (dir.y === 1 && holdKeys.down) ||
+        (dir.y === -1 && holdKeys.up)
+      );
+    }
+
+    function currentDelay() {
+      return isAccelerating() ? Math.max(MIN_SPEED, Math.floor(speed * 0.45)) : speed;
+    }
+
     function occupiedSet(extra = []) {
       const set = new Set();
-      for (const p of snake) set.add(keyOf(p));
-      for (const p of obstacles) set.add(keyOf(p));
+      snake.forEach(p => set.add(keyOf(p)));
+      obstacles.forEach(p => set.add(keyOf(p)));
       if (food) set.add(keyOf(food));
-      if (special) set.add(keyOf(special));
-      for (const p of extra) set.add(keyOf(p));
+      if (shieldItem) set.add(keyOf(shieldItem));
+      extra.forEach(p => set.add(keyOf(p)));
       return set;
     }
 
     function randomFreeCell(extra = []) {
       const blocked = occupiedSet(extra);
-      for (let i = 0; i < 2000; i++) {
-        const c = { x: randInt(GRID), y: randInt(GRID) };
-        if (!blocked.has(keyOf(c))) return c;
-      }
-      for (let y = 0; y < GRID; y++) {
-        for (let x = 0; x < GRID; x++) {
-          const c = { x, y };
-          if (!blocked.has(keyOf(c))) return c;
+      const free = [];
+      for (let x = 0; x < GRID; x++) {
+        for (let y = 0; y < GRID; y++) {
+          const cell = { x, y };
+          if (!blocked.has(keyOf(cell))) free.push(cell);
         }
       }
-      return null;
+      if (free.length === 0) return null;
+      return free[randInt(free.length)];
     }
 
     function resetGameModel() {
-      const cy = Math.floor(GRID / 2);
+      const mid = Math.floor(GRID / 2);
       snake = [
-        { x: 7, y: cy }, { x: 6, y: cy }, { x: 5, y: cy }, { x: 4, y: cy }
+        { x: mid, y: mid },
+        { x: mid - 1, y: mid },
+        { x: mid - 2, y: mid }
       ];
       dir = { x: 1, y: 0 };
       nextDir = { x: 1, y: 0 };
-      obstacles = [];
-      food = null;
-      special = null;
       score = 0;
-      level = 1;
+      ate = 0;
       combo = 0;
       maxCombo = 0;
-      shield = 0;
-      boostUntil = 0;
+      level = 1;
+      speed = BASE_SPEED;
+      shield = false;
+      obstacles = [];
+      obstacleShapes = [];
+      obstacleTimer = OBSTACLE_ROTATE_BASE;
+      food = null;
+      shieldItem = null;
       submitted = false;
       accumulator = 0;
       spawnFood();
-      rebuildObstacles();
       updateHud();
     }
 
     function spawnFood() {
-      food = randomFreeCell();
-      if (!food) finishWin();
+      const pos = randomFreeCell();
+      if (!pos) {
+        finishWin();
+        return;
+      }
+      const roll = Math.random();
+      let type;
+      if (roll < 0.08) type = 'd';       // 钻石：高分短时
+      else if (roll < 0.20) type = 'g';  // 金星：中高分
+      else if (roll < 0.30) type = 'p';  // 毒蘑菇：扣分缩短
+      else if (roll < 0.50) type = 'b';  // 浆果：中分
+      else type = 'n';                   // 普通苹果
+
+      const levelScale = Math.max(0.35, 1 - (level - 1) * 0.08);
+      let baseTimer;
+      if (type === 'n') baseTimer = 180;
+      else if (type === 'g') baseTimer = 105;
+      else if (type === 'd') baseTimer = 60;
+      else if (type === 'b') baseTimer = 225;
+      else baseTimer = 60;
+      const timer = Math.max(30, Math.round(baseTimer * levelScale));
+      food = { ...pos, type, timer, maxTimer: timer };
     }
 
-    function maybeSpawnSpecial(now) {
-      if (special || Math.random() > 0.26) return;
-      const c = randomFreeCell();
-      if (!c) return;
-      const r = Math.random();
-      let type = TYPES.STAR;
-      if (r < 0.38) type = TYPES.STAR;
-      else if (r < 0.62) type = TYPES.POISON;
-      else if (r < 0.82) type = TYPES.SHIELD;
-      else type = TYPES.BOOST;
-      special = { ...c, type, expiresAt: now + 8000 };
+    function spawnShield() {
+      if (shieldItem) return;
+      const pos = randomFreeCell();
+      if (pos) shieldItem = { ...pos, timer: 180 };
     }
 
-    function rebuildObstacles() {
-      const target = Math.min(24, Math.max(0, Math.floor((level - 1) * 1.65)));
-      while (obstacles.length > target) obstacles.pop();
-      while (obstacles.length < target) {
-        const c = randomFreeCell([{ x: snake[0].x + dir.x, y: snake[0].y + dir.y }]);
-        if (!c) break;
-        const nearHead = Math.abs(c.x - snake[0].x) + Math.abs(c.y - snake[0].y) < 4;
-        if (!nearHead) obstacles.push(c);
+    function spawnObstacle() {
+      if (obstacleShapes.length >= Math.min(8, Math.max(2, level + 1))) return;
+      const blocked = occupiedSet();
+      const free = [];
+      for (let x = 0; x < GRID; x++) {
+        for (let y = 0; y < GRID; y++) {
+          const c = { x, y };
+          const nearHead = Math.abs(c.x - snake[0].x) + Math.abs(c.y - snake[0].y) < 3;
+          if (!blocked.has(keyOf(c)) && !nearHead) free.push(c);
+        }
+      }
+      if (free.length < 3) return;
+      for (let attempt = 0; attempt < 40; attempt++) {
+        const shape = OBSTACLE_SHAPES[randInt(OBSTACLE_SHAPES.length)];
+        const base = free[randInt(free.length)];
+        const cells = [];
+        let ok = true;
+        for (const [dx, dy] of shape) {
+          const nx = base.x + dx;
+          const ny = base.y + dy;
+          const c = { x: nx, y: ny };
+          if (nx < 0 || nx >= GRID || ny < 0 || ny >= GRID || blocked.has(keyOf(c))) {
+            ok = false;
+            break;
+          }
+          cells.push(c);
+        }
+        if (!ok) continue;
+        cells.forEach(c => obstacles.push(c));
+        obstacleShapes.push({ cells, timer: OBSTACLE_ROTATE_BASE });
+        return;
       }
     }
 
-    function updateLevel() {
-      const newLevel = Math.floor(score / 10) + 1;
-      if (newLevel !== level) {
-        level = newLevel;
-        rebuildObstacles();
-      }
+    function updateLevelAndSpeed() {
+      level = Math.min(10, Math.floor(ate / 5) + 1);
+      speed = Math.max(MIN_SPEED, BASE_SPEED - (level - 1) * 11);
     }
-
-    function currentStepMs() {
-      const base = Math.max(72, 168 - (level - 1) * 9);
-      return isBoostActive() ? Math.max(54, base * 0.62) : base;
-    }
-
-    function isBoostActive() { return performance.now() < boostUntil; }
-
-    function setDirection(dx, dy) {
-      if ((state !== 'running' && state !== 'paused') || !dx && !dy) return;
-      if (snake.length > 1 && dx === -dir.x && dy === -dir.y) return;
-      nextDir = { x: dx, y: dy };
-    }
-
-    function cellIndex(list, cell) { return list.findIndex(p => sameCell(p, cell)); }
 
     function saveBest() {
       if (score > best) {
@@ -420,90 +469,120 @@
 
     function updateHud() {
       scoreEl.textContent = score;
-      bestEl.textContent = Math.max(best, globalBest);
+      bestEl.textContent = Math.max(best, globalBest || 0);
       levelEl.textContent = 'Lv.' + level;
       comboEl.textContent = '🔥 ' + combo;
-      const parts = [];
-      if (shield > 0) parts.push('🛡️ ' + shield);
-      if (isBoostActive()) parts.push('⚡ 加速');
-      statusEl.textContent = parts.length ? parts.join('  ') : '💎 无';
+      comboEl.style.opacity = combo >= 3 ? '1' : '.65';
+      const status = [];
+      if (isAccelerating()) status.push('⚡ 加速');
+      if (shield) status.push('🛡️ 激活');
+      else if (shieldItem) status.push('💎 待拾取');
+      if (!status.length) status.push('💎 无');
+      statusEl.textContent = status.join('  ');
     }
 
-    function stepGame(now) {
-      if (state !== 'running') return;
-      if (special && now > special.expiresAt) special = null;
+    function setDirection(dx, dy) {
+      if (state !== 'running' && state !== 'paused') return;
+      if (snake.length > 1 && dx === -dir.x && dy === -dir.y) return;
+      nextDir = { x: dx, y: dy };
+    }
 
-      dir = nextDir;
-      const head = {
-        x: (snake[0].x + dir.x + GRID) % GRID,
-        y: (snake[0].y + dir.y + GRID) % GRID
+    function removeObstacleAt(cell) {
+      const idx = obstacles.findIndex(o => sameCell(o, cell));
+      if (idx >= 0) obstacles.splice(idx, 1);
+      obstacleShapes = obstacleShapes
+        .map(s => ({ ...s, cells: s.cells.filter(c => !sameCell(c, cell)) }))
+        .filter(s => s.cells.length > 0);
+    }
+
+    function stepGame() {
+      if (state !== 'running') return;
+
+      dir = { ...nextDir };
+      const head = snake[0];
+      const next = {
+        x: (head.x + dir.x + GRID) % GRID,
+        y: (head.y + dir.y + GRID) % GRID
       };
 
-      const selfHit = cellIndex(snake, head);
-      const obstacleHit = cellIndex(obstacles, head);
-      if (selfHit > 0) {
-        if (shield > 0) {
-          shield--;
-          snake = snake.slice(0, selfHit);
-          snake.unshift(head);
-          while (snake.length < 3) snake.push({ ...snake[snake.length - 1] });
-        } else {
-          return finishGame();
+      if (obstacles.some(o => sameCell(o, next))) {
+        if (shield) {
+          shield = false;
+          removeObstacleAt(next);
+          updateHud();
+          return;
         }
-      } else if (obstacleHit >= 0) {
-        if (shield > 0) {
-          shield--;
-          obstacles.splice(obstacleHit, 1);
-          snake.unshift(head);
-          snake.pop();
-        } else {
-          return finishGame();
-        }
-      } else {
-        snake.unshift(head);
+        return finishGame();
       }
 
-      let grow = false;
-      if (sameCell(head, food)) {
-        score += 1;
-        combo += 1;
+      if (snake.some(s => sameCell(s, next))) {
+        if (shield) {
+          shield = false;
+          updateHud();
+          return;
+        }
+        return finishGame();
+      }
+
+      if (shieldItem && sameCell(shieldItem, next)) {
+        shield = true;
+        shieldItem = null;
+      }
+
+      snake.unshift(next);
+
+      if (food && sameCell(food, next)) {
+        ate++;
+        combo++;
         maxCombo = Math.max(maxCombo, combo);
-        grow = true;
-        spawnFood();
-        maybeSpawnSpecial(now);
-      }
 
-      if (special && sameCell(head, special)) {
-        switch (special.type) {
-          case TYPES.STAR:
-            score += 3;
-            combo += 3;
-            maxCombo = Math.max(maxCombo, combo);
-            grow = true;
-            break;
-          case TYPES.POISON:
-            score = Math.max(0, score - 1);
-            combo = 0;
-            if (snake.length > 4) snake.pop();
-            if (snake.length > 4) snake.pop();
-            break;
-          case TYPES.SHIELD:
-            shield = clamp(shield + 1, 0, 3);
-            break;
-          case TYPES.BOOST:
-            boostUntil = now + 6200;
-            break;
+        let add;
+        if (food.type === 'n') add = 1;
+        else if (food.type === 'g') add = 3;
+        else if (food.type === 'd') add = 5;
+        else if (food.type === 'b') add = 2;
+        else add = -2;
+
+        // 原始成长曲线：连击每 3 次额外 +1，后期得分明显变快。
+        add += Math.floor(combo / 3);
+        score = Math.max(0, score + add);
+
+        if (food.type === 'p') {
+          if (snake.length > 4) snake.splice(Math.max(1, snake.length - 3), 3);
         }
-        special = null;
+
+        updateLevelAndSpeed();
+        if (ate % OBSTACLE_INTERVAL === 0) spawnObstacle();
+        if (ate % SHIELD_INTERVAL === 0) spawnShield();
+        spawnFood();
+        if (state === 'won') return;
+      } else {
+        snake.pop();
       }
 
-      if (!grow) snake.pop();
-      updateLevel();
+      if (shieldItem) {
+        shieldItem.timer--;
+        if (shieldItem.timer <= 0) shieldItem = null;
+      }
+
+      if (food) {
+        food.timer--;
+        if (food.timer <= 0) spawnFood();
+      }
+
+      obstacleTimer--;
+      if (obstacleTimer <= 0) {
+        obstacles = [];
+        obstacleShapes = [];
+        spawnObstacle();
+        obstacleTimer = Math.max(200, OBSTACLE_ROTATE_BASE - level * 25);
+      }
+
+      const occupied = snake.length + obstacles.length;
+      if (occupied >= GRID * GRID - 1) return finishWin();
+
       saveBest();
       updateHud();
-
-      const freeCells = GRID * GRID - obstacles.length;
-      if (snake.length >= freeCells - 1) finishWin();
     }
 
     function finishGame() {
@@ -515,7 +594,7 @@
       submitBtn.disabled = false;
       submitBtn.textContent = '上传成绩';
       lbStatus.textContent = score > 0 ? '可以上传本局成绩' : '0 分无须上传';
-      showOverlay('💀 游戏结束', `得分：${score} | 最高连击：${maxCombo}<br>速度等级：${level}<br>蛇身长度：${snake.length}`, true, '再玩一次');
+      showOverlay('💀 游戏结束', `得分：${score} | 最高连击：${maxCombo}<br>速度等级：${level} | 蛇身长度：${snake.length}<br><span style="color:#9aa0c8">输入名字后点击“上传成绩”即可记录到排行榜。</span>`, true, '再玩一次');
       if (playerName) nameInput.value = playerName;
       renderLeaderboard(lbCache);
       loadLeaderboard();
@@ -530,7 +609,8 @@
       submitBtn.disabled = false;
       submitBtn.textContent = '上传成绩';
       lbStatus.textContent = '通关成绩可上传';
-      showOverlay('🎉 通关成功', `得分：${score} | 最高连击：${maxCombo}<br>速度等级：${level}<br>蛇身长度：${snake.length}`, true, '再玩一次');
+      showOverlay('🎉 通关成功', `得分：${score} | 最高连击：${maxCombo}<br>速度等级：${level} | 蛇身长度：${snake.length}<br><span style="color:#9aa0c8">输入名字后点击“上传成绩”即可记录到排行榜。</span>`, true, '再玩一次');
+      if (playerName) nameInput.value = playerName;
       renderLeaderboard(lbCache);
       loadLeaderboard();
     }
@@ -541,12 +621,13 @@
       showOverlay('⚠️ 游戏异常', '游戏循环遇到异常。请点击重新开始，或刷新页面。', false, '重新开始');
     }
 
-    function showOverlay(title, text, showLb, buttonText) {
+    function showOverlay(title, text, showLeaderboard, buttonText) {
       overlayTitle.innerHTML = title;
       overlayText.innerHTML = text;
       startBtn.textContent = buttonText || '开始游戏';
       startBtn.style.display = '';
-      lbSection.style.display = showLb ? '' : 'none';
+      // 关键修复：CSS 中 .lb-section 默认 display:none，不能用空字符串恢复，必须显式设为 block。
+      lbSection.style.display = showLeaderboard ? 'block' : 'none';
       overlay.classList.add('show');
     }
 
@@ -578,7 +659,13 @@
       }
     }
 
-    function restartGame() { startGame(); }
+    function restartGame() {
+      state = 'idle';
+      resetGameModel();
+      pauseBtn.textContent = '暂停';
+      showOverlay('🐍 贪吃蛇+', '方向键 / WASD 控制<br>空格暂停 · R 重开 · 穿墙循环<br><span style="color:#9aa0c8">成长曲线已恢复：多类型食物、连击加分、吃 5 个食物升一级。</span>', false, '开始游戏');
+      draw();
+    }
 
     function drawRoundedRect(x, y, w, h, r) {
       ctx.beginPath();
@@ -603,6 +690,12 @@
         ctx.beginPath();
         ctx.moveTo(0, p); ctx.lineTo(SIZE, p); ctx.stroke();
       }
+      ctx.save();
+      ctx.globalAlpha = .12;
+      ctx.strokeStyle = '#4fc3f7';
+      ctx.setLineDash([8, 4]);
+      ctx.strokeRect(1, 1, SIZE - 2, SIZE - 2);
+      ctx.restore();
     }
 
     function drawCell(cell, color, inset = 2, radius = 5) {
@@ -610,100 +703,198 @@
       drawRoundedRect(cell.x * CELL + inset, cell.y * CELL + inset, CELL - inset * 2, CELL - inset * 2, radius);
     }
 
-    function drawFood() {
-      if (food) {
-        drawCell(food, '#ffd166', 3, 7);
-        ctx.fillStyle = '#ff6b6b';
-        ctx.beginPath();
-        ctx.arc(food.x * CELL + CELL / 2, food.y * CELL + CELL / 2, CELL * .27, 0, Math.PI * 2);
-        ctx.fill();
+    function drawObstacles() {
+      for (const o of obstacles) {
+        const x = o.x * CELL;
+        const y = o.y * CELL;
+        ctx.fillStyle = '#3a2a3e';
+        ctx.fillRect(x + 1, y + 1, CELL - 2, CELL - 2);
+        ctx.strokeStyle = '#6a4a6a';
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(x + 1, y + 1, CELL - 2, CELL - 2);
+        ctx.fillStyle = '#5a3a5a';
+        ctx.fillRect(x + 3, y + 3, CELL - 6, CELL - 6);
       }
-      if (!special) return;
-      const centerX = special.x * CELL + CELL / 2;
-      const centerY = special.y * CELL + CELL / 2;
-      const map = {
-        [TYPES.STAR]: ['#ffd166', '⭐'],
-        [TYPES.POISON]: ['#ff5d73', '☠'],
-        [TYPES.SHIELD]: ['#55d6ff', '◆'],
-        [TYPES.BOOST]: ['#ff9f1c', '⚡']
-      };
-      const [color, label] = map[special.type];
-      drawCell(special, color, 2, 7);
-      ctx.fillStyle = '#101018';
-      ctx.font = 'bold 12px system-ui, sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(label, centerX, centerY + 1);
     }
 
-    function drawObstacles() {
-      for (const o of obstacles) drawCell(o, '#34344f', 1.5, 4);
+    function drawShieldItem() {
+      if (!shieldItem) return;
+      const cx = shieldItem.x * CELL + CELL / 2;
+      const cy = shieldItem.y * CELL + CELL / 2;
+      const pulse = .86 + .14 * Math.sin(performance.now() / 180);
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.scale(pulse, pulse);
+      ctx.fillStyle = '#4fc3f7';
+      ctx.shadowColor = '#4fc3f7';
+      ctx.shadowBlur = 12;
+      ctx.beginPath();
+      ctx.moveTo(0, -CELL / 2 + 2);
+      ctx.lineTo(CELL / 2 - 2, 0);
+      ctx.lineTo(0, CELL / 2 - 2);
+      ctx.lineTo(-CELL / 2 + 2, 0);
+      ctx.closePath();
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = '#b3e5fc';
+      ctx.beginPath();
+      ctx.moveTo(0, -CELL / 4);
+      ctx.lineTo(CELL / 4, 0);
+      ctx.lineTo(0, CELL / 4);
+      ctx.lineTo(-CELL / 4, 0);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+
+    function drawFood() {
+      if (!food) return;
+      const cx = food.x * CELL + CELL / 2;
+      const cy = food.y * CELL + CELL / 2;
+      const remain = food.timer / food.maxTimer;
+      ctx.globalAlpha = remain > .3 ? 1 : .5 + .5 * Math.sin(performance.now() / 120);
+
+      if (food.type === 'n') {
+        ctx.fillStyle = '#ff5a5a';
+        ctx.beginPath(); ctx.arc(cx, cy, CELL / 2 - 2, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#ff8888';
+        ctx.beginPath(); ctx.arc(cx - 2, cy - 2, 3, 0, Math.PI * 2); ctx.fill();
+      } else if (food.type === 'g') {
+        ctx.save();
+        ctx.shadowColor = '#ffd700';
+        ctx.shadowBlur = 14;
+        ctx.fillStyle = '#ffd700';
+        drawStar(cx, cy, CELL / 2 - 1, CELL * .20, 5);
+        ctx.restore();
+      } else if (food.type === 'd') {
+        ctx.fillStyle = '#00e5ff';
+        ctx.shadowColor = '#00e5ff';
+        ctx.shadowBlur = 12;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy - CELL / 2 + 2);
+        ctx.lineTo(cx + CELL / 2 - 2, cy);
+        ctx.lineTo(cx, cy + CELL / 2 - 2);
+        ctx.lineTo(cx - CELL / 2 + 2, cy);
+        ctx.closePath();
+        ctx.fill();
+        ctx.shadowBlur = 0;
+      } else if (food.type === 'b') {
+        ctx.fillStyle = '#7c4dff';
+        ctx.beginPath(); ctx.arc(cx, cy, CELL / 2 - 2, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#b388ff';
+        ctx.beginPath(); ctx.arc(cx - 2, cy - 2, 3, 0, Math.PI * 2); ctx.fill();
+      } else if (food.type === 'p') {
+        ctx.fillStyle = '#7b1fa2';
+        ctx.beginPath(); ctx.ellipse(cx, cy + 2, CELL / 2 - 2, CELL / 3, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#9c27b0';
+        ctx.beginPath(); ctx.ellipse(cx, cy - 3, CELL / 2 - 3, CELL / 3, 0, Math.PI, 0); ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    function drawStar(cx, cy, outer, inner, points) {
+      ctx.beginPath();
+      for (let i = 0; i < points * 2; i++) {
+        const r = i % 2 === 0 ? outer : inner;
+        const a = i * Math.PI / points - Math.PI / 2;
+        const x = cx + r * Math.cos(a);
+        const y = cy + r * Math.sin(a);
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.closePath();
+      ctx.fill();
     }
 
     function drawSnake() {
-      snake.forEach((p, i) => {
-        const t = i / Math.max(1, snake.length - 1);
-        const hue = 158 - t * 80;
-        ctx.fillStyle = `hsl(${hue} 70% ${55 - t * 8}%)`;
-        drawRoundedRect(p.x * CELL + 2, p.y * CELL + 2, CELL - 4, CELL - 4, 5);
-        if (i === 0) {
-          ctx.fillStyle = '#1b1b31';
-          const eyeY = p.y * CELL + 6;
-          const eyeOffsetX = dir.x !== 0 ? 0 : 3;
-          const eyeOffsetY = dir.y !== 0 ? 0 : 3;
-          ctx.beginPath(); ctx.arc(p.x * CELL + 6 + eyeOffsetX * dir.x, eyeY + eyeOffsetY * dir.y, 1.7, 0, Math.PI * 2); ctx.fill();
-          ctx.beginPath(); ctx.arc(p.x * CELL + 12 + eyeOffsetX * dir.x, eyeY + eyeOffsetY * dir.y, 1.7, 0, Math.PI * 2); ctx.fill();
+      const shieldActive = shield;
+      for (let i = 0; i < snake.length; i++) {
+        const p = snake[i];
+        const t = snake.length > 1 ? i / (snake.length - 1) : 0;
+        ctx.fillStyle = `rgb(${60 + Math.floor(t * 40)},${170 + Math.floor(t * 50)},${60 + Math.floor((1 - t) * 70)})`;
+        const x = p.x * CELL + 1.5;
+        const y = p.y * CELL + 1.5;
+        drawRoundedRect(x, y, CELL - 3, CELL - 3, 4);
+        if (shieldActive) {
+          ctx.strokeStyle = '#4fc3f7';
+          ctx.lineWidth = 2;
+          ctx.shadowColor = '#4fc3f7';
+          ctx.shadowBlur = 8;
+          ctx.strokeRect(x - .5, y - .5, CELL - 2, CELL - 2);
+          ctx.shadowBlur = 0;
         }
-      });
+      }
+      const head = snake[0];
+      if (!head) return;
+      ctx.fillStyle = '#fff';
+      ctx.beginPath(); ctx.arc(head.x * CELL + 7, head.y * CELL + 7, 2.5, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(head.x * CELL + CELL - 7, head.y * CELL + 7, 2.5, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#111';
+      ctx.beginPath(); ctx.arc(head.x * CELL + 7, head.y * CELL + 7, 1.2, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(head.x * CELL + CELL - 7, head.y * CELL + 7, 1.2, 0, Math.PI * 2); ctx.fill();
     }
 
     function drawCountdown(now) {
       if (state !== 'countdown') return;
       const elapsed = now - countdownStart;
       let text = '';
-      if (elapsed < 600) text = '3';
-      else if (elapsed < 1200) text = '2';
-      else if (elapsed < 1800) text = '1';
-      else if (elapsed < 2300) text = '开始!';
+      if (elapsed < 450) text = '3';
+      else if (elapsed < 900) text = '2';
+      else if (elapsed < 1350) text = '1';
+      else if (elapsed < 1800) text = '开始!';
       else {
         state = 'running';
         lastFrame = now;
         accumulator = 0;
         return;
       }
-      ctx.fillStyle = 'rgba(0,0,0,.38)';
+      ctx.fillStyle = 'rgba(0,0,0,.35)';
       ctx.fillRect(0, 0, SIZE, SIZE);
       ctx.fillStyle = '#fff';
       ctx.font = '900 78px system-ui, sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.shadowColor = 'rgba(255,255,255,.36)';
-      ctx.shadowBlur = 24;
+      ctx.shadowColor = 'rgba(255,255,255,.3)';
+      ctx.shadowBlur = 28;
       ctx.fillText(text, SIZE / 2, SIZE / 2);
       ctx.shadowBlur = 0;
+    }
+
+    function drawPause() {
+      if (state !== 'paused') return;
+      ctx.fillStyle = 'rgba(16,16,30,.6)';
+      ctx.fillRect(0, 0, SIZE, SIZE);
+      ctx.fillStyle = '#e0e0f0';
+      ctx.font = 'bold 36px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('⏸ 已暂停', SIZE / 2, SIZE / 2);
+      ctx.font = '14px system-ui, sans-serif';
+      ctx.fillStyle = '#8888b0';
+      ctx.fillText('按空格键继续', SIZE / 2, SIZE / 2 + 40);
     }
 
     function draw() {
       drawGrid();
       drawObstacles();
+      drawShieldItem();
       drawFood();
       drawSnake();
+      drawPause();
     }
 
     function loop(now) {
       try {
         if (!lastFrame) lastFrame = now;
-        const rawDt = now - lastFrame;
-        const dt = Math.min(rawDt, 250);
+        const dt = Math.min(now - lastFrame, 250);
         lastFrame = now;
 
         if (state === 'running') {
           accumulator += dt;
-          const stepMs = currentStepMs();
           let guard = 0;
-          while (accumulator >= stepMs && state === 'running' && guard < 5) {
-            stepGame(now);
-            accumulator -= stepMs;
+          while (accumulator >= currentDelay() && state === 'running' && guard < 6) {
+            stepGame();
+            accumulator -= currentDelay();
             guard++;
           }
         }
@@ -718,7 +909,10 @@
     }
 
     function loadLeaderboard() {
-      if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return;
+      if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+        lbStatus.textContent = '排行榜未配置';
+        return;
+      }
       const select = 'player_name,score,lvl,created_at';
       fetch(`${SUPABASE_URL}/rest/v1/${SUPABASE_TABLE}?select=${select}&order=score.desc.nullslast,created_at.asc&limit=80`, {
         headers: {
@@ -729,9 +923,7 @@
       .then(r => { if (!r.ok) throw new Error('load leaderboard failed'); return r.json(); })
       .then(data => {
         lbCache = Array.isArray(data) ? data : [];
-        if (lbCache[0] && Number(lbCache[0].score) > globalBest) {
-          globalBest = Number(lbCache[0].score);
-        }
+        if (lbCache[0] && Number(lbCache[0].score) > globalBest) globalBest = Number(lbCache[0].score);
         renderLeaderboard(lbCache);
         updateHud();
       })
@@ -764,7 +956,9 @@
         lbBody.appendChild(tr);
         if (displayRank >= 50) break;
       }
-      lbStatus.textContent = state === 'over' || state === 'won' ? (score > 0 ? '可以上传本局成绩' : '0 分无须上传') : '排行榜已加载';
+      if (state === 'over' || state === 'won') lbStatus.textContent = score > 0 ? '可以上传本局成绩' : '0 分无须上传';
+      else lbStatus.textContent = '排行榜已加载';
+
       if (rank > 0) lbYourRank.textContent = `⭐ 你的排名：第 ${rank} 名`;
       else if (playerName) lbYourRank.textContent = '未上榜，上传成绩试试';
       else lbYourRank.textContent = '';
@@ -836,15 +1030,25 @@
 
     document.addEventListener('keydown', e => {
       const k = e.key;
+      if (e.target === nameInput) return;
       if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','w','W','a','A','s','S','d','D',' ','Enter'].includes(k)) e.preventDefault();
       if (k === ' ' || k === 'p' || k === 'P') { togglePause(); return; }
       if (k === 'r' || k === 'R') { restartGame(); return; }
       if (k === 'Enter' && overlay.classList.contains('show')) { startGame(); return; }
       switch (k) {
-        case 'ArrowUp': case 'w': case 'W': setDirection(0, -1); break;
-        case 'ArrowDown': case 's': case 'S': setDirection(0, 1); break;
-        case 'ArrowLeft': case 'a': case 'A': setDirection(-1, 0); break;
-        case 'ArrowRight': case 'd': case 'D': setDirection(1, 0); break;
+        case 'ArrowUp': case 'w': case 'W': holdKeys.up = true; setDirection(0, -1); break;
+        case 'ArrowDown': case 's': case 'S': holdKeys.down = true; setDirection(0, 1); break;
+        case 'ArrowLeft': case 'a': case 'A': holdKeys.left = true; setDirection(-1, 0); break;
+        case 'ArrowRight': case 'd': case 'D': holdKeys.right = true; setDirection(1, 0); break;
+      }
+    });
+
+    document.addEventListener('keyup', e => {
+      switch (e.key) {
+        case 'ArrowUp': case 'w': case 'W': holdKeys.up = false; break;
+        case 'ArrowDown': case 's': case 'S': holdKeys.down = false; break;
+        case 'ArrowLeft': case 'a': case 'A': holdKeys.left = false; break;
+        case 'ArrowRight': case 'd': case 'D': holdKeys.right = false; break;
       }
     });
 
@@ -866,7 +1070,9 @@
       touchStartX = t.clientX;
       touchStartY = t.clientY;
     }, { passive: true });
+
     canvas.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
+
     canvas.addEventListener('touchend', e => {
       if (touchStartX == null || touchStartY == null) return;
       const t = e.changedTouches[0];
@@ -874,7 +1080,7 @@
       const dy = t.clientY - touchStartY;
       touchStartX = null;
       touchStartY = null;
-      if (Math.abs(dx) < 16 && Math.abs(dy) < 16) return;
+      if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
       if (Math.abs(dx) > Math.abs(dy)) setDirection(dx > 0 ? 1 : -1, 0);
       else setDirection(0, dy > 0 ? 1 : -1);
     }, { passive: true });
@@ -886,10 +1092,16 @@
     pauseBtn.addEventListener('click', togglePause);
     resetBtn.addEventListener('click', restartGame);
     submitBtn.addEventListener('click', submitScore);
-    nameInput.addEventListener('keydown', e => { if (e.key === 'Enter') submitScore(); });
+    nameInput.addEventListener('keydown', e => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        e.stopPropagation();
+        submitScore();
+      }
+    });
 
     resetGameModel();
-    showOverlay('🐍 贪吃蛇+', '方向键 / WASD 控制<br>空格暂停 · R 重开 · 穿墙循环', false, '开始游戏');
+    showOverlay('🐍 贪吃蛇+', '方向键 / WASD 控制<br>空格暂停 · R 重开 · 穿墙循环<br><span style="color:#9aa0c8">多类型食物、连击加分、吃 5 个食物升一级。</span>', false, '开始游戏');
     draw();
     loadLeaderboard();
     rafId = requestAnimationFrame(loop);
